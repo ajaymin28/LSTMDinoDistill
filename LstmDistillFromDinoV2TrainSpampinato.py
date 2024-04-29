@@ -27,9 +27,10 @@ class Parameters:
     ce_loss_weight = 0.95
     mse_loss_weight = 0.20
     soft_target_loss_weight = 0.05
-    alpha = 0.5
-    teacher_temp = 0.05
-    student_temp=0.1
+    alpha = 0
+    temperature = 0.33
+    teacher_temp = 0.33
+    student_temp= 0.24
 
 class CosineSimilarityLoss(nn.Module):
     def __init__(self):
@@ -102,6 +103,25 @@ class DINOLoss(nn.Module):
         # ema update
         self.center = self.center * self.center_momentum + batch_center * (1 - self.center_momentum)   
 
+
+def loss_fn_kd(outputs, labels, teacher_outputs, params):
+    """
+    Compute the knowledge-distillation (KD) loss given outputs, labels.
+    "Hyperparameters": temperature and alpha
+
+    NOTE: the KL Divergence for PyTorch comparing the softmaxs of teacher
+    and student expects the input tensor to be log probabilities! See Issue #2
+    """
+    alpha = params.alpha
+    T = params.temperature
+    KD_loss = nn.KLDivLoss()(F.log_softmax(outputs/T, dim=1),
+                             F.softmax(teacher_outputs/T, dim=1)) * (alpha * T * T) + \
+              F.cross_entropy(outputs, labels) * (1. - alpha)
+
+    return KD_loss
+
+
+
 class FeatureDistributionLoss(nn.Module):
     def __init__(self, nepochs, warmup_teacher_temp, teacher_temp, warmup_teacher_temp_epochs):
         super().__init__()
@@ -173,7 +193,7 @@ if __name__=="__main__":
 
     parser = argparse.ArgumentParser('CNN Exercise.')
     parser.add_argument('--learning_rate',
-                        type=float, default=0.001,
+                        type=float, default=0.0001,
                         help='Initial learning rate.')
     parser.add_argument('--num_epochs',
                         type=int,
@@ -240,7 +260,7 @@ if __name__=="__main__":
                         help='type of tansformation needed to be done to create query instances')
     parser.add_argument('--hyperprams',
                         type=str,
-                        default="{'ce_loss_weight': 0.50, 'soft_target_loss_weight':0.50,'alpha': 1,'temperature':2}",
+                        default="{'ce_loss_weight': 0.50, 'soft_target_loss_weight':0.50,'alpha': 0,'temperature':2}",
                         help='hyper params for training model, pass dict tpye in string format')
     parser.add_argument('--seed', default=43, type=int, help='Random seed.')
     parser.add_argument('--num_workers', default=4, type=int, help='Number of data loading workers per GPU.')
@@ -362,6 +382,7 @@ if __name__=="__main__":
                                         warmup_teacher_temp_epochs=HyperParams.warmup_teacher_temp_epochs)
     
     criterion = CosineSimilarityLoss()
+    criterion = nn.CosineEmbeddingLoss()
     # criterion = SupervisedContrastiveLoss()
     
     # criterion = DINOLoss(
@@ -398,7 +419,10 @@ if __name__=="__main__":
             # loss = dino_loss(lstm_output,image_features, EPOCH)
             # loss = criterion(lstm_output, image_features, EPOCH, label["ClassId"].to(device))
             # loss = criterion(lstm_output, image_features)
-            loss = criterion_feature_dist(lstm_output, image_features, EPOCH, label["ClassId"].to(device))
+            # loss = criterion_feature_dist(lstm_output, image_features, EPOCH, label["ClassId"].to(device))
+
+            loss = loss_fn_kd(outputs=lstm_output,labels=label["ClassId"].to(device),teacher_outputs=image_features,params=Parameters)
+
             batch_losses.append(loss.cpu().item())
 
             loss.backward()
@@ -427,8 +451,10 @@ if __name__=="__main__":
 
                     lstm_output = LSTM_model(eeg.to(device))
 
+                    loss = loss_fn_kd(outputs=lstm_output,labels=label["ClassId"].to(device),teacher_outputs=image_features,params=Parameters)
+
                     # loss = criterion(lstm_output, image_features)
-                    loss = criterion_feature_dist(lstm_output, image_features, EPOCH, label["ClassId"].to(device))
+                    # loss = criterion_feature_dist(lstm_output, image_features, EPOCH, label["ClassId"].to(device))
                     # loss = criterion(lstm_output,image_features, EPOCH, label["ClassId"].to(device))
                     # loss = dino_loss(lstm_output,image_features, EPOCH)
                     loss = loss.cpu().item()
@@ -449,6 +475,6 @@ if __name__=="__main__":
                     torch.save(LSTM_model.state_dict(), f"{FLAGS.log_dir}/lstm_dinov2_epochs_{EPOCHS}_best_loss.pth")
 
 
-            print(f"EPOCH {EPOCH} train_loss: {round(epoch_loss,6)} val_loss: {round(val_epoch_loss,6)} T: {HyperParams.T} best val loss: {best_val_loss} on epoch: {best_val_loss_epoch}")
+            print(f"EPOCH {EPOCH} train_loss: {round(epoch_loss,6)} val_loss: {round(val_epoch_loss,6)} T: {Parameters.temperature} best val loss: {best_val_loss} on epoch: {best_val_loss_epoch}")
         else:
-            print(f"EPOCH {EPOCH} train_loss: {round(epoch_loss,6)} T: {HyperParams.T}")
+            print(f"EPOCH {EPOCH} train_loss: {round(epoch_loss,6)} T: {Parameters.temperature}")
