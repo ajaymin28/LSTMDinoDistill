@@ -302,7 +302,7 @@ if __name__=="__main__":
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),  
     ])
 
-    dataset = EEGDataset(eeg_signals_path="./data/eeg/theperils/spampinato-1-IMAGE_RAPID_RAW_with_mean_std.pth", 
+    dataset = EEGDataset(eeg_signals_path=EEG_DATASET_PATH, 
                         eeg_splits_path=EEG_DATASET_SPLIT,
                         preprocessin_fn=transform_image, 
                         time_low=0, 
