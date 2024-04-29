@@ -185,7 +185,7 @@ if __name__=="__main__":
     parser.add_argument('--log_dir',
                         type=str,
                         default='./logs/DinoV2LstmDistillv2sdsad/',
-                        help='Directory to put logging.')
+                        help='Directory t put logging.')
     parser.add_argument('--gallery_subject',
                         type=int,
                         default=1,
@@ -295,6 +295,7 @@ if __name__=="__main__":
                         preprocessin_fn=transform_image, 
                         time_low=20, 
                         time_high=480,
+                        imagesRoot=FLAGS.images_root
                         inference_mode=True)
     
     eeg, label,image,i, image_features = dataset[0]
