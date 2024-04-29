@@ -340,7 +340,7 @@ if __name__=="__main__":
 
     # data_loader_train = DataLoader(train_ds, batch_size=FLAGS.batch_size, shuffle=True)
     # data_loader_val = DataLoader(val_ds, batch_size=FLAGS.batch_size, shuffle=True)
-    # eeg, label,image,i, image_features = next(iter(data_loader_train)) 
+    eeg, label,image,i, image_features = next(iter(data_loader_train)) 
     # # print(eeg.shape, "eeg shape")
     # outs = dinov2_model(image.to(device))
     # features_length = outs.size(-1)
