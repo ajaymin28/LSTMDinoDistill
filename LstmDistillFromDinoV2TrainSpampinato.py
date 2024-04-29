@@ -295,7 +295,7 @@ if __name__=="__main__":
                         preprocessin_fn=transform_image, 
                         time_low=20, 
                         time_high=480,
-                        imagesRoot=FLAGS.images_root
+                        imagesRoot=FLAGS.images_root,
                         inference_mode=True)
     
     eeg, label,image,i, image_features = dataset[0]
