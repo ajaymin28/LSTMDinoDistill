@@ -318,6 +318,7 @@ class EEGDataset(Dataset):
         image_labels = []
         for EEG,labels,image, index, img_feat in metric_logger.log_every(data_loader, 10):
             samples = EEG
+            # print(samples.shape)
             samples = samples.cuda(non_blocking=True)
 
             features = model(samples).clone()

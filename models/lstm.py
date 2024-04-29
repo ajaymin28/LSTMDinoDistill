@@ -15,7 +15,7 @@ import numpy as np
 
 class Model(nn.Module):
 
-    def __init__(self, input_size=128, lstm_size=128, lstm_layers=4, output_size=128, include_top=True):
+    def __init__(self, input_size=128, lstm_size=512, lstm_layers=4, output_size=128, include_top=True):
         # Call parent
         super().__init__()
         # Define parameters
@@ -28,9 +28,8 @@ class Model(nn.Module):
         # Define internal modules
         self.lstm = nn.LSTM(input_size, lstm_size, num_layers=lstm_layers, batch_first=True)
         self.L0 = nn.Linear(lstm_size, output_size)
-
-        self.L1p = nn.Linear(output_size, output_size)
-        self.L2p = nn.Linear(output_size, output_size)
+        # self.L1p = nn.Linear(output_size, output_size)
+        # self.L2p = nn.Linear(output_size, output_size)
 
         self.classifier = nn.Linear(output_size,40)
         
@@ -45,13 +44,13 @@ class Model(nn.Module):
 
         # Forward LSTM and get final state
         x = self.lstm(x, lstm_init)[0][:,-1,:]
-        
+        x = F.gelu(x)
         # Forward output
-        x = F.gelu(self.L0(x))
-        x = F.dropout(x, p=0.5)
-        x = F.gelu(self.L1p(x))
-        x = F.dropout(x, p=0.5) 
-        x = self.L2p(x)
+        x = self.L0(x)
+        # x = F.dropout(x, p=0.5)
+        # x = F.gelu(self.L1p(x))
+        # x = F.dropout(x, p=0.5) 
+        # x = self.L2p(x)
 
         # # Add the tensors
         # pt_addition_result = torch.add(x1p, x2p)

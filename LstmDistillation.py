@@ -13,6 +13,9 @@ import torch.distributed as dist
 import torch.nn.functional as F
 import json
 from pathlib import Path
+
+from dino.utils import trunc_normal_
+
 class CosineSimilarityLoss(nn.Module):
     def __init__(self):
         super().__init__()
@@ -21,6 +24,79 @@ class CosineSimilarityLoss(nn.Module):
     def forward(self, student_outputs, teacher_outputs):
         loss = 1 - self.cosine_similarity(student_outputs, teacher_outputs).mean()
         return loss
+
+class MultiCropWrapper(nn.Module):
+    """
+    Perform forward pass separately on each resolution input.
+    The inputs corresponding to a single resolution are clubbed and single
+    forward is run on the same resolution inputs. Hence we do several
+    forward passes = number of different resolutions used. We then
+    concatenate all the output features and run the head forward on these
+    concatenated features.
+    """
+    def __init__(self, backbone, head):
+        super(MultiCropWrapper, self).__init__()
+        # disable layers dedicated to ImageNet labels classification
+        backbone.fc, backbone.head = nn.Identity(), nn.Identity()
+        self.backbone = backbone
+        self.head = head
+
+    def forward(self, x):
+        # convert to list
+        if not isinstance(x, list):
+            x = [x]
+        idx_crops = torch.cumsum(torch.unique_consecutive(
+            torch.tensor([inp.shape[-1] for inp in x]),
+            return_counts=True,
+        )[1], 0)
+        start_idx, output = 0, torch.empty(0).to(x[0].device)
+        for end_idx in idx_crops:
+            _out = self.backbone(torch.cat(x[start_idx: end_idx]))
+            # The output is a tuple with XCiT model. See:
+            # https://github.com/facebookresearch/xcit/blob/master/xcit.py#L404-L405
+            if isinstance(_out, tuple):
+                _out = _out[0]
+            # accumulate outputs
+            output = torch.cat((output, _out))
+            start_idx = end_idx
+        # Run the head forward on the concatenated features.
+        return self.head(output)
+
+class DINOHead(nn.Module):
+    def __init__(self, in_dim, out_dim, use_bn=False, norm_last_layer=True, nlayers=3, hidden_dim=2048, bottleneck_dim=256):
+        super().__init__()
+        nlayers = max(nlayers, 1)
+        if nlayers == 1:
+            self.mlp = nn.Linear(in_dim, bottleneck_dim)
+        else:
+            layers = [nn.Linear(in_dim, hidden_dim)]
+            if use_bn:
+                layers.append(nn.BatchNorm1d(hidden_dim))
+            layers.append(nn.GELU())
+            for _ in range(nlayers - 2):
+                layers.append(nn.Linear(hidden_dim, hidden_dim))
+                if use_bn:
+                    layers.append(nn.BatchNorm1d(hidden_dim))
+                layers.append(nn.GELU())
+            layers.append(nn.Linear(hidden_dim, bottleneck_dim))
+            self.mlp = nn.Sequential(*layers)
+        self.apply(self._init_weights)
+        self.last_layer = nn.utils.weight_norm(nn.Linear(bottleneck_dim, out_dim, bias=False))
+        self.last_layer.weight_g.data.fill_(1)
+        if norm_last_layer:
+            self.last_layer.weight_g.requires_grad = False
+
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            trunc_normal_(m.weight, std=.02)
+            if isinstance(m, nn.Linear) and m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        x = self.mlp(x)
+        x = nn.functional.normalize(x, dim=-1, p=2)
+        x = self.last_layer(x)
+        return x
 
 class DINOLoss(nn.Module):
     def __init__(self, out_dim, ncrops, warmup_teacher_temp, teacher_temp,
@@ -133,7 +209,7 @@ if __name__=="__main__":
         help="Whether to use batch normalizations in projection head (Default: False)")
 
     # Temperature teacher parameters
-    parser.add_argument('--warmup_teacher_temp', default=0.0004, type=float,
+    parser.add_argument('--warmup_teacher_temp', default=0.04, type=float,
         help="""Initial value for the teacher temperature: 0.04 works well in most cases.
         Try decreasing it if the training loss does not decrease.""")
     parser.add_argument('--teacher_temp', default=0.04, type=float, help="""Final value (after linear warmup)
@@ -157,7 +233,7 @@ if __name__=="__main__":
         help optimization for larger ViT architectures. 0 for disabling.""")
     parser.add_argument('--batch_size_per_gpu', default=8, type=int,
         help='Per-GPU batch-size : number of distinct images loaded on one GPU.')
-    parser.add_argument('--epochs', default=100, type=int, help='Number of epochs of training.')
+    parser.add_argument('--epochs', default=200, type=int, help='Number of epochs of training.')
     parser.add_argument('--freeze_last_layer', default=1, type=int, help="""Number of epochs
         during which we keep the output layer fixed. Typically doing so during
         the first epoch helps training. Try increasing this value if the loss does not decrease.""")
@@ -177,7 +253,7 @@ if __name__=="__main__":
         help="""Scale range of the cropped image before resizing, relatively to the origin image.
         Used for large global view cropping. When disabling multi-crop (--local_crops_number 0), we
         recommand using a wider range of scale ("--global_crops_scale 0.14 1." for example)""")
-    parser.add_argument('--local_crops_number', type=int, default=2, help="""Number of small
+    parser.add_argument('--local_crops_number', type=int, default=4, help="""Number of small
         local views to generate. Set this parameter to 0 to disable multi-crop training.
         When disabling multi-crop we recommend to use "--global_crops_scale 0.14 1." """)
     parser.add_argument('--local_crops_scale', type=float, nargs='+', default=(0.05, 0.4),
@@ -345,17 +421,26 @@ if __name__=="__main__":
     # outs = dinov2_model(image.to(device))
     # features_length = outs.size(-1)
     # print(outs.size())
+    embed_dim = 384
+    # lstm_embedding_dim = 128
 
-    features_length = 384
+    teacher = Model(input_size=96,lstm_size=embed_dim,lstm_layers=4,output_size=embed_dim, include_top=False)
+    student = Model(input_size=96,lstm_size=embed_dim,lstm_layers=4,output_size=embed_dim, include_top=False)
 
+    # multi-crop wrapper handles forward with inputs of different resolutions
+    student = utils.MultiCropWrapper(student, DINOHead(
+        embed_dim,
+        FLAGS.out_dim,
+        use_bn=FLAGS.use_bn_in_head,
+        norm_last_layer=FLAGS.norm_last_layer,
+    ))
+    teacher = utils.MultiCropWrapper(
+        teacher,
+        DINOHead(embed_dim, FLAGS.out_dim, FLAGS.use_bn_in_head),
+    )
 
+    student, teacher = student.cuda(), teacher.cuda()
 
-
-    teacher = Model(input_size=96,lstm_size=100,lstm_layers=4,output_size=features_length, include_top=False)
-    teacher.to(device)
-
-    student = Model(input_size=96,lstm_size=100,lstm_layers=4,output_size=features_length, include_top=False)
-    student.to(device)
 
     student = nn.parallel.DistributedDataParallel(student, device_ids=[FLAGS.gpu], find_unused_parameters=True)
     teacher.load_state_dict(student.module.state_dict())
@@ -369,11 +454,6 @@ if __name__=="__main__":
     # print(lstmout.size())
 
     params_groups = utils.get_params_groups(student)
-
-    # opt = torch.optim.Adam(lr=learning_rate, params=params_groups)
-    # criterion = CosineSimilarityLoss()
-    # criterion = nn.MSELoss()
-    # criterion = FeatureDistributionLoss()
     
     # ============ preparing loss ... ============
     dino_loss = DINOLoss(
