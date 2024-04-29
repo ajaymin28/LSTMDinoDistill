@@ -62,7 +62,7 @@ class EEGDataset(Dataset):
         self.class_labels = loaded["labels"]
         image_names = loaded['images']
 
-        stddevsfile = "./data/eeg/spampinato/eeg_signals_raw_with_mean_std.pth"
+        stddevsfile = eeg_signals_path
         stddevsfile_loaded = torch.load(stddevsfile)
         try:
             self.eeg_stds  = stddevsfile_loaded["stddevs"]
