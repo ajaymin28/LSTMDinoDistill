@@ -65,7 +65,7 @@ def get_args_parser():
         help="Whether to use batch normalizations in projection head (Default: False)")
 
     # Temperature teacher parameters
-    parser.add_argument('--warmup_teacher_temp', default=0.0004, type=float,
+    parser.add_argument('--warmup_teacher_temp', default=0.04, type=float,
         help="""Initial value for the teacher temperature: 0.04 works well in most cases.
         Try decreasing it if the training loss does not decrease.""")
     parser.add_argument('--teacher_temp', default=0.04, type=float, help="""Final value (after linear warmup)

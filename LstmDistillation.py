@@ -421,7 +421,7 @@ if __name__=="__main__":
     # outs = dinov2_model(image.to(device))
     # features_length = outs.size(-1)
     # print(outs.size())
-    embed_dim = 384
+    embed_dim = 128
     # lstm_embedding_dim = 128
 
     teacher = Model(input_size=96,lstm_size=embed_dim,lstm_layers=4,output_size=embed_dim, include_top=False)
@@ -497,9 +497,9 @@ if __name__=="__main__":
     print(f"Loss, optimizer and schedulers ready.")
 
 
-    warmup_teacher_temp = 0.05
-    teacher_temp = 0.05
-    warmup_teacher_temp_epochs = 5
+    # warmup_teacher_temp = 0.05
+    # teacher_temp = 0.05
+    # warmup_teacher_temp_epochs = 5
 
     # dino_loss = DINOLoss(
     #     out_dim=features_length,
@@ -515,8 +515,8 @@ if __name__=="__main__":
     best_val_loss = None
 
 
-    GlobalLength = 200
-    LocalLength = 100
+    GlobalLength = 300
+    LocalLength = 200
     GlobalViews = 2
     LocalViews = 4
 

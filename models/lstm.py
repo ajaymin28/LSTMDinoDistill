@@ -44,9 +44,9 @@ class Model(nn.Module):
 
         # Forward LSTM and get final state
         x = self.lstm(x, lstm_init)[0][:,-1,:]
-        x = F.gelu(x)
+        # x = F.gelu(x)
         # Forward output
-        x = self.L0(x)
+        # x = self.L0(x)
         # x = F.dropout(x, p=0.5)
         # x = F.gelu(self.L1p(x))
         # x = F.dropout(x, p=0.5) 
