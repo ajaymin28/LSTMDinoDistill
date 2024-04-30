@@ -244,7 +244,9 @@ if __name__=="__main__":
                         default="{'ce_loss_weight': 0.50, 'soft_target_loss_weight':0.50,'alpha': 1,'temperature':2}",
                         help='hyper params for training model, pass dict tpye in string format')
     parser.add_argument('--seed', default=43, type=int, help='Random seed.')
-    parser.add_argument('--num_workers', default=4, type=int, help='Number of data loading workers per GPU.')
+    parser.add_argument('--output_dir', default="./output", type=str, help='Path to save logs and checkpoints.')
+    parser.add_argument('--saveckp_freq', default=10, type=int, help='Save checkpoint every x epochs.')
+    parser.add_argument('--num_workers', default=0, type=int, help='Number of data loading workers per GPU.')
     parser.add_argument("--dist_url", default="env://", type=str, help="""url used to set up
         distributed training; see https://pytorch.org/docs/stable/distributed.html""")
     parser.add_argument("--local_rank", default=0, type=int, help="Please ignore and do not set this argument.")
@@ -267,7 +269,7 @@ if __name__=="__main__":
     SaveModelOnEveryEPOCH = 100
     EEG_DATASET_PATH = FLAGS.eeg_dataset
     validation_frequency = 5
-    # EEG_DATASET_SPLIT = "./data/eeg/block_splits_by_image_all.pth"
+    EEG_DATASET_SPLIT = FLAGS.eeg_dataset_split
 
     hyperprams = eval(FLAGS.hyperprams)
     if 'alpha' in hyperprams:
@@ -279,8 +281,6 @@ if __name__=="__main__":
     if 'temperature' in hyperprams:
         Parameters.temperature = hyperprams["temperature"]
 
-
-
     transform_image = transforms.Compose([
         transforms.ToTensor(),
         transforms.Resize(256, antialias=True),       
@@ -288,16 +288,13 @@ if __name__=="__main__":
         transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),  
     ])
 
-
-
-    dataset = EEGDataset(eeg_signals_path="./data/eeg/theperils/spampinato-1-IMAGE_RAPID_RAW_with_mean_std.pth", 
-                        eeg_splits_path=None,
+    dataset = EEGDataset(eeg_signals_path=EEG_DATASET_PATH, 
+                        eeg_splits_path=EEG_DATASET_SPLIT,
                         preprocessin_fn=transform_image, 
-                        time_low=20, 
-                        time_high=480,
-                        add_channel_dim_to_eeg=True)
-    
-
+                        time_low=0, 
+                        time_high=495,
+                        imagesRoot=FLAGS.images_root,
+                        data_augment_eeg=False)
 
     
     eeg, label,image,i, image_features = dataset[0]
@@ -367,7 +364,7 @@ if __name__=="__main__":
                                         teacher_temp=HyperParams.teacher_temp,
                                         warmup_teacher_temp_epochs=HyperParams.warmup_teacher_temp_epochs)
     
-    criterion = CosineSimilarityLoss()
+    # criterion = CosineSimilarityLoss()
     # criterion = SupervisedContrastiveLoss()
     
     
@@ -401,8 +398,8 @@ if __name__=="__main__":
 
             # loss = dino_loss(lstm_output,image_features, EPOCH)
             # loss = criterion(lstm_output, image_features, EPOCH, label["ClassId"].to(device))
-            loss = criterion(lstm_output, image_features)
-            loss += criterion_feature_dist(lstm_output, image_features, EPOCH, label["ClassId"].to(device))
+            # loss = criterion(lstm_output, image_features)
+            loss = criterion_feature_dist(lstm_output, image_features, EPOCH, label["ClassId"].to(device))
             batch_losses.append(loss.cpu().item())
 
             loss.backward()
@@ -430,8 +427,8 @@ if __name__=="__main__":
                     image_features = torch.from_numpy(np.array(image_features)).to(device)
                     lstm_output = Conformer_model(eeg.to(device))
 
-                    loss = criterion(lstm_output, image_features)
-                    loss += criterion_feature_dist(lstm_output, image_features, EPOCH, label["ClassId"].to(device))
+                    # loss = criterion(lstm_output, image_features)
+                    loss = criterion_feature_dist(lstm_output, image_features, EPOCH, label["ClassId"].to(device))
                     # loss = criterion(lstm_output,image_features, EPOCH, label["ClassId"].to(device))
                     # loss = dino_loss(lstm_output,image_features, EPOCH)
                     loss = loss.cpu().item()
