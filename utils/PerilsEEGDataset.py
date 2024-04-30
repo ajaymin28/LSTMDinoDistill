@@ -87,10 +87,20 @@ class EEGDataset(Dataset):
                     self.class_id_to_str[int(indexOfClass)]= imagenetClassName
                     self.class_str_to_id[imagenetClassName]= int(indexOfClass)
         
+        self.std = 0
+        self.mean = 0
+        cnt = 0
+        
         for i in range(len(loaded["dataset"])):
+            self.mean += loaded['dataset'][i]["eeg"].mean()
+            self.std  += loaded['dataset'][i]["eeg"].std()
+            cnt +=1
             self.subsetData.append(loaded['dataset'][i])
             self.labels.append(loaded["dataset"][i]['label'])
             self.images.append(image_names[loaded["dataset"][i]['image']])
+
+        self.mean = self.mean/cnt
+        self.std = self.std/cnt
 
         # Compute size
         self.size = len(self.subsetData)
@@ -321,7 +331,7 @@ class EEGDataset(Dataset):
             # print(samples.shape)
             samples = samples.cuda(non_blocking=True)
 
-            features = model(samples).clone()
+            features, cls_ = model(samples)
 
             for idx, feat in enumerate(features):
                 image_features.append(feat.cpu().numpy())
@@ -558,6 +568,9 @@ class EEGDataset(Dataset):
                 #         eeg = self.normlizeEEG(EEG=eeg,ch_index=ch_idx,class_index=None)
                 eeg = eeg[self.time_low:self.time_high,:]
 
+        
+        if self.apply_norm_with_stds_and_means:
+            eeg = (eeg-self.mean)/ self.std
         
         if self.data_augment_eeg:
             channel_norm_eeg = eeg

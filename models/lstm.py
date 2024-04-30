@@ -15,7 +15,7 @@ import numpy as np
 
 class Model(nn.Module):
 
-    def __init__(self, input_size=128, lstm_size=512, lstm_layers=4, output_size=128, include_top=True):
+    def __init__(self, input_size=128, lstm_size=128, lstm_layers=4, output_size=128, include_top=True, n_classes=40):
         # Call parent
         super().__init__()
         # Define parameters
@@ -31,7 +31,7 @@ class Model(nn.Module):
         # self.L1p = nn.Linear(output_size, output_size)
         # self.L2p = nn.Linear(output_size, output_size)
 
-        self.classifier = nn.Linear(output_size,40)
+        self.classifier = nn.Linear(output_size,n_classes)
         
     def forward(self, x):
         # Prepare LSTM initiale state
@@ -40,10 +40,17 @@ class Model(nn.Module):
         if x.is_cuda: lstm_init = (lstm_init[0].cuda(), lstm_init[0].cuda())
         lstm_init = (Variable(lstm_init[0]), Variable(lstm_init[1]))
 
+        x = self.lstm(x, lstm_init)[0][:,-1,:]
+
+        # x, _ = self.lstm(x)
+        # Get the output from the last time step
+        x = self.L0(x)
+
+
         # print(lstm_init[0].dtype, x.dtype)
 
         # Forward LSTM and get final state
-        x = self.lstm(x, lstm_init)[0][:,-1,:]
+        # x = self.lstm(x, lstm_init)[0][:,-1,:]
         # x = F.gelu(x)
         # Forward output
         # x = self.L0(x)
@@ -60,5 +67,5 @@ class Model(nn.Module):
 
 
         if self.include_top:
-            x = self.classifier((x))
-        return x
+            cls_ = self.classifier((x))
+        return x, cls_
